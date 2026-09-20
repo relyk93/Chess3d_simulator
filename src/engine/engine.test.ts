@@ -89,6 +89,17 @@ describe('createEngine', () => {
     await expect(p).rejects.toThrow(/stopped/i);
   });
 
+  test('a stale bestmove after stop does not resolve the next bestMove', async () => {
+    const { w, engine } = await bootReady();
+    const first = engine.bestMove('f1', 100);
+    engine.stop();
+    await expect(first).rejects.toThrow(/stopped/i);
+    const second = engine.bestMove('f2', 100);
+    w.emit('bestmove e2e4'); // stale line from the interrupted search
+    w.emit('bestmove d2d4'); // the real answer to the second request
+    await expect(second).resolves.toEqual({ from: 'd2', to: 'd4' });
+  });
+
   test('a second bestMove while one is pending rejects', async () => {
     const { w, engine } = await bootReady();
     const first = engine.bestMove('f', 100);

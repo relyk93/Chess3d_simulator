@@ -34,6 +34,9 @@ export function createEngine(factory: WorkerFactory, opts: { readyTimeoutMs?: nu
   const readyTimeoutMs = opts.readyTimeoutMs ?? 10_000;
   const worker = factory();
   let pending: Pending | null = null;
+  // Every `go` yields exactly one `bestmove`, even when interrupted by `stop`. Count the
+  // ones we abandoned so their late lines are not mistaken for the next request's answer.
+  let staleBestmoves = 0;
   let resolveReady!: () => void;
   let rejectReady!: (e: Error) => void;
   const readyPromise = new Promise<void>((res, rej) => {
@@ -52,6 +55,10 @@ export function createEngine(factory: WorkerFactory, opts: { readyTimeoutMs?: nu
       clearTimeout(timer);
       resolveReady();
     } else if (line.startsWith('bestmove')) {
+      if (staleBestmoves > 0) {
+        staleBestmoves--;
+        return;
+      }
       const p = pending;
       pending = null;
       if (!p) return;
@@ -81,7 +88,10 @@ export function createEngine(factory: WorkerFactory, opts: { readyTimeoutMs?: nu
       worker.postMessage('stop');
       const p = pending;
       pending = null;
-      p?.reject(new Error('Engine search stopped'));
+      if (p) {
+        staleBestmoves++;
+        p.reject(new Error('Engine search stopped'));
+      }
     },
     dispose() {
       clearTimeout(timer);
