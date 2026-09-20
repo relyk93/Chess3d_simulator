@@ -64,7 +64,9 @@ export function createController(deps: ControllerDeps): ControllerStore {
 
   const snapshot = () => ({ turn: core.turn(), inCheck: core.inCheck(), gameOver: core.gameOver() });
 
-  const isHumanTurn = () => get().settings.twoPlayer || core.turn() === humanColor;
+  // With no usable engine (none, or failed) the human moves both sides.
+  const isHumanTurn = () =>
+    get().settings.twoPlayer || engine === null || get().engineStatus === 'failed' || core.turn() === humanColor;
   const engineShouldMove = () =>
     engine !== null && !get().settings.twoPlayer && get().engineStatus === 'ready' && core.turn() !== humanColor;
 
@@ -94,8 +96,9 @@ export function createController(deps: ControllerDeps): ControllerStore {
     set({ engineStatus: 'failed', engineError: message, settings, phase: 'idle' });
   }
 
-  function requestEngineMove() {
+  function requestEngineMove(isRetry = false) {
     if (!engine) return set({ phase: 'idle' });
+    if (!isRetry) retried = false;
     const seq = ++requestSeq;
     set({ phase: 'engineThinking' });
     engine.bestMove(core.fen(), moveTimeMs).then(
@@ -113,7 +116,7 @@ export function createController(deps: ControllerDeps): ControllerStore {
         if (err instanceof Error && /stopped/i.test(err.message)) return;
         if (!retried) {
           retried = true;
-          requestEngineMove();
+          requestEngineMove(true);
           return;
         }
         failEngine(err);
@@ -198,6 +201,11 @@ export function createController(deps: ControllerDeps): ControllerStore {
       const settings = { ...get().settings, ...patch };
       save(settings);
       set({ settings });
+      if (patch.twoPlayer === true && get().phase === 'engineThinking') {
+        requestSeq++;
+        engine?.stop();
+        set({ phase: 'idle', ...CLEAR_SELECTION });
+      }
       if (patch.skill !== undefined && engine && get().engineStatus === 'ready') engine.setSkill(patch.skill);
       if (patch.twoPlayer === false && get().phase === 'idle' && engineShouldMove()) requestEngineMove();
     },

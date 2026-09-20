@@ -212,3 +212,60 @@ describe('createController', () => {
     expect(state(store).phase).toBe('engineThinking');
   });
 });
+
+describe('createController review fixes', () => {
+  test('I1a: after the engine failed to start, turning two-player off still lets both sides move', async () => {
+    const core = createGameCore();
+    const engine = new FakeEngine();
+    const store = createController({ core, engine, saveSettings: () => {} });
+    engine.failToStart();
+    await flush();
+    expect(state(store).engineStatus).toBe('failed');
+    const a = state(store).actions;
+    a.updateSettings({ twoPlayer: false });
+    a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone();
+    expect(state(store)).toMatchObject({ phase: 'idle', turn: 'b' });
+    a.clickSquare('e7'); a.clickSquare('e5');
+    expect(state(store).history.map((m) => m.san)).toEqual(['e4', 'e5']);
+    expect(engine.searches).toEqual([]);
+  });
+
+  test('I1b: a store without an engine lets the human move both sides', () => {
+    const core = createGameCore();
+    const store = createController({ core, engine: null, saveSettings: () => {} });
+    const a = state(store).actions;
+    a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone();
+    expect(state(store)).toMatchObject({ phase: 'idle', turn: 'b' });
+    a.clickSquare('e7'); a.clickSquare('e5');
+    expect(state(store).history.map((m) => m.san)).toEqual(['e4', 'e5']);
+  });
+
+  test('I2: enabling two-player while the engine thinks cancels the search', async () => {
+    const { store, a, engine } = await setup();
+    a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone();
+    expect(state(store).phase).toBe('engineThinking');
+    a.updateSettings({ twoPlayer: true });
+    expect(state(store)).toMatchObject({ phase: 'idle', selected: null });
+    expect(engine.stops).toBe(1);
+    engine.reply({ from: 'e7', to: 'e5' });
+    await flush();
+    expect(state(store).history.map((m) => m.san)).toEqual(['e4']);
+    a.clickSquare('e7'); a.clickSquare('e5');
+    expect(state(store).history.map((m) => m.san)).toEqual(['e4', 'e5']);
+  });
+
+  test('I3: the retry allowance is renewed for each new engine request', async () => {
+    const { store, a, engine } = await setup();
+    a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone();
+    engine.fail(); await flush();
+    expect(engine.searches).toHaveLength(2);
+    a.undo();
+    a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone();
+    expect(engine.searches).toHaveLength(3);
+    engine.fail(); await flush();
+    expect(engine.searches).toHaveLength(4);
+    expect(state(store)).toMatchObject({ phase: 'engineThinking', engineStatus: 'ready' });
+    engine.fail(); await flush();
+    expect(state(store)).toMatchObject({ phase: 'idle', engineStatus: 'failed' });
+  });
+});
