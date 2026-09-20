@@ -1,5 +1,7 @@
 # Art Pipeline Tooling Implementation Plan (Plan 3 of 3)
 
+> **Status: executed.** All nine tasks are built and verified. Running the real CLI and `gltf-transform validate` on files found two defects the unit tests missed (orphaned keyframe data, noisy library logging) and one usability gap (a stack trace for a missing input file). Those fixes are folded into the code below and listed under "As-Built Corrections".
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn raw generated models into a valid, shippable set pack: `pnpm art normalize` fixes and validates one model, `pnpm art build-set` builds all twelve plus the manifest. Everything runs offline and calls no paid API.
@@ -169,11 +171,15 @@ export function pieceHeight(piece: string): number {
 `tools/art/io.ts`:
 
 ```ts
-import { NodeIO } from '@gltf-transform/core';
+import { Logger, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 
-/** The one reader and writer for the pipeline, so extensions that generators emit are understood. */
-export const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+/**
+ * The one reader and writer for the pipeline, so extensions that generators emit are understood.
+ * Documents it reads inherit its logger, which is set to warnings only: the library's per-step
+ * progress lines would print a dozen times over during a whole-set build.
+ */
+export const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).setLogger(new Logger(Logger.Verbosity.WARN));
 ```
 
 - [ ] **Step 5: Run the constants test and watch it pass**
@@ -723,6 +729,20 @@ describe('applyClips', () => {
     expect(names(doc)).toEqual(['idle']);
   });
 
+  test('deleting a clip removes its channels and samplers too, so pruning can free the keyframes', async () => {
+    const doc = await statueDoc({ skinned: true, clips: ['Walking', 'idle'] });
+    const [walking, idle] = doc.getRoot().listAnimations();
+    const walkChannel = walking!.listChannels()[0]!;
+    const walkSampler = walkChannel.getSampler()!;
+    const idleChannel = idle!.listChannels()[0]!;
+
+    applyClips(doc, 'w-king', { rename: { Walking: null }, keep: ['idle'] });
+
+    expect(walkChannel.isDisposed()).toBe(true);
+    expect(walkSampler.isDisposed()).toBe(true);
+    expect(idleChannel.isDisposed()).toBe(false);
+  });
+
   test('a clip outside the standard five is an error that says how to fix it', async () => {
     const doc = await statueDoc({ skinned: true, clips: ['Walking', 'idle'] });
     expect(() => applyClips(doc, 'w-king', { rename: {}, keep: ['idle'] })).toThrow(
@@ -804,6 +824,16 @@ export interface ClipReport {
 
 const isStandard = (name: string): name is ClipName => (CLIP_NAMES as readonly string[]).includes(name);
 
+/** Disposing an animation alone leaves its channels and samplers, and so their keyframe accessors, in the file. */
+function dropClip(anim: Animation): void {
+  for (const channel of anim.listChannels()) {
+    const sampler = channel.getSampler();
+    channel.dispose();
+    sampler?.dispose();
+  }
+  anim.dispose();
+}
+
 export function applyClips(doc: Document, piece: string, opts: ClipOptions): ClipReport {
   const root = doc.getRoot();
   const warnings: string[] = [];
@@ -812,7 +842,7 @@ export function applyClips(doc: Document, piece: string, opts: ClipOptions): Cli
     const from = anim.getName();
     if (!Object.hasOwn(opts.rename, from)) continue;
     const to = opts.rename[from];
-    if (to === null || to === undefined) anim.dispose();
+    if (to === null || to === undefined) dropClip(anim);
     else anim.setName(to);
   }
 
@@ -832,7 +862,7 @@ export function applyClips(doc: Document, piece: string, opts: ClipOptions): Cli
   }
 
   for (const anim of root.listAnimations()) {
-    if (!opts.keep.includes(anim.getName() as ClipName)) anim.dispose();
+    if (!opts.keep.includes(anim.getName() as ClipName)) dropClip(anim);
   }
 
   const have = root.listAnimations().map((a) => a.getName());
@@ -879,7 +909,7 @@ export function closeLoop(anim: Animation): number {
 - [ ] **Step 4: Run the test and watch it pass**
 
 Run: `pnpm test tools/art/clips.test.ts`
-Expected: PASS, 10 tests.
+Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1181,7 +1211,7 @@ export function assertSize(piece: string, bytes: number): void {
 - [ ] **Step 4: Run the test and watch it pass**
 
 Run: `pnpm test tools/art/textures.test.ts`
-Expected: PASS, 8 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1266,6 +1296,25 @@ describe('normalizeModel', () => {
     expect(names).toEqual(expect.arrayContaining(['normalized', 'root', 'tip', 'body']));
   });
 
+  test('a dropped clip leaves no orphaned keyframe data in the output', async () => {
+    const input = await statueGlb({ skinned: true, clips: ['Walking', 'idle'] });
+    const { glb } = await normalizeModel(input, { piece: 'w-king', keep: ['idle'], rename: { Walking: null } });
+    // position, indices, joints, weights, inverse bind matrices, plus the one kept clip's time and value
+    expect((await readGlb(glb)).getRoot().listAccessors()).toHaveLength(7);
+  });
+
+  test('does not print the library\'s progress lines, so a whole-set build stays readable', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const input = await statueGlb({ skinned: true, clips: ['Walking', 'idle'] });
+    await normalizeModel(input, { piece: 'w-king', keep: ['idle'], rename: { Walking: null } });
+    expect(info).not.toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
   test('a rigid pawn keeps no clips and gets the pawn height', async () => {
     const input = await statueGlb({ size: [0.5, 1, 0.5], center: [0, 0.5, 0], clips: ['idle'] });
     const { glb, report } = await normalizeModel(input, { piece: 'b-pawn', keep: [] });
@@ -1340,7 +1389,7 @@ import type { Document } from '@gltf-transform/core';
 import { applyClips } from './clips';
 import { assertNotFarOff, assertYUp, measure, theScene } from './inspect';
 import { io } from './io';
-import { mergeClips } from './mergeClips';
+import { mergeClips, type ClipSource } from './mergeClips';
 import { DEFAULT_TEXTURE_PX, NormalizeError, pieceHeight, type ClipName } from './spec';
 import { assertSize, slim } from './textures';
 import { normalizeTransform } from './transform';
@@ -1393,7 +1442,7 @@ export async function normalizeModel(input: Uint8Array, opts: NormalizeOptions):
 
   const warnings: string[] = [];
   if (opts.extraClips && opts.extraClips.length > 0) {
-    const sources = [];
+    const sources: ClipSource[] = [];
     for (const clip of opts.extraClips) {
       sources.push({ name: clip.name, doc: await read(clip.bytes, piece, `the animation file for "${clip.name}"`) });
     }
@@ -1419,7 +1468,7 @@ export async function normalizeModel(input: Uint8Array, opts: NormalizeOptions):
 - [ ] **Step 4: Run the test and watch it pass**
 
 Run: `pnpm test tools/art/normalize.test.ts`
-Expected: PASS, 10 tests. If the rigged-king test fails on the animation names, check that `prune()` kept the joints (the second test isolates that).
+Expected: PASS, 12 tests. If the rigged-king test fails on the animation names, check that `prune()` kept the joints (the second test isolates that).
 
 - [ ] **Step 5: Run the whole art suite and typecheck**
 
@@ -1619,7 +1668,7 @@ export function parseNormalizeArgs(argv: string[]): NormalizeCommand {
 - [ ] **Step 4: Run the argument tests and watch them pass**
 
 Run: `pnpm test tools/art/args.test.ts`
-Expected: PASS, 11 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Write the failing CLI test**
 
@@ -1692,6 +1741,15 @@ describe('main', () => {
     error.mockRestore();
   });
 
+  test('a missing input file prints one line instead of a stack trace and exits 1', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const code = await main(['normalize', '--piece', 'w-king', '--in', '/no/such/dir/x.glb', '--out', '/tmp/never.glb']);
+    expect(code).toBe(1);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('cannot open /no/such/dir/x.glb: no such file or directory');
+    error.mockRestore();
+  });
+
   test('an unknown command exits 1 with the usage text', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(await main(['frobnicate'])).toBe(1);
@@ -1761,6 +1819,11 @@ export async function main(argv: string[]): Promise<number> {
       console.error(e.message);
       return 1;
     }
+    const io = e as NodeJS.ErrnoException;
+    if (io.code === 'ENOENT' && io.path) {
+      console.error(`cannot open ${io.path}: no such file or directory`);
+      return 1;
+    }
     throw e;
   }
 }
@@ -1783,14 +1846,24 @@ In `package.json` `scripts`, add after `"dev-packs"`:
 Run: `pnpm test tools/art && pnpm typecheck`
 Expected: PASS, typecheck clean.
 
-Smoke test on disk (writes to the scratch folder, not the repo):
+Smoke test the real process on files (use the scratchpad folder, not the repo). Top-level `await` needs an ES module, so name the helper `.mts`:
 
 ```bash
-pnpm exec tsx -e "import('./tools/art/testing/fixtures.ts').then(async m => (await import('node:fs')).writeFileSync(process.argv[1], await m.statueGlb({ skinned: true, size: [0.5,3,0.5], center: [2,5,0], clips: ['Idle'] })))" /tmp/art-smoke.glb
-pnpm art normalize --piece w-king --in /tmp/art-smoke.glb --out /tmp/art-smoke-out.glb --keep idle --rename Idle=idle
+cat > /tmp/art-make.mts <<'SCRIPT'
+import { writeFileSync } from 'node:fs';
+import { statueGlb } from '/ABSOLUTE/PATH/TO/repo/tools/art/testing/fixtures';
+writeFileSync('/tmp/rig.glb', await statueGlb({ skinned: true, size: [0.5, 3, 0.5], center: [2, 5, 0], clips: ['Walking'] }));
+writeFileSync('/tmp/attack.glb', await statueGlb({ skinned: true, clips: ['Fight'] }));
+writeFileSync('/tmp/zup.glb', await statueGlb({ size: [0.4, 0.4, 2], center: [0, 0, 1] }));
+SCRIPT
+pnpm exec tsx /tmp/art-make.mts
+pnpm art normalize --piece w-king --in /tmp/rig.glb --out /tmp/out/w-king.glb --keep attack --rename Walking= --anim attack=/tmp/attack.glb
+pnpm art normalize --piece w-pawn --in /tmp/zup.glb --out /tmp/out/x.glb
+pnpm art normalize --piece w-king --in /tmp/rig.glb --out /tmp/out/y.glb --keep idle
+pnpm exec gltf-transform validate /tmp/out/w-king.glb
 ```
 
-Expected: `w-king: 1.000 units tall, <n> KB, clips: idle`. (Use the scratchpad directory instead of `/tmp` if your session has one.)
+Expected, in order: `w-king: 1.000 units tall, 2 KB, clips: attack` (exit 0); `w-pawn: does not look Y-up: ...` (exit 1, no file written); `w-king: clips outside the standard five remain: "Walking". ...` (exit 1, no file written); validator says `No errors found` with one expected warning, `NODE_SKINNED_MESH_NON_ROOT` (see the README's "Checking a result"), and no `UNUSED_OBJECT` notes.
 
 - [ ] **Step 9: Commit**
 
@@ -2090,8 +2163,38 @@ Add this test to `tools/art/cli.test.ts` inside `describe('main', ...)`:
   });
 ```
 
+Also add this test beside it, which drives the whole path through `main`:
+
+```ts
+  test('build-set builds a set from a source folder and prints one line per piece', async () => {
+    const src = mkdtempSync(join(tmpdir(), 'art-cli-set-'));
+    const pieces: Record<string, unknown> = {};
+    for (const key of ALL_PIECE_KEYS) {
+      writeFileSync(join(src, `${key}.glb`), await statueGlb({ size: [0.5, 1, 0.5], center: [0, 0.5, 0] }));
+      pieces[key] = { model: `${key}.glb` };
+    }
+    writeFileSync(
+      join(src, 'set.json'),
+      JSON.stringify({
+        id: 's', name: 'S', version: 1,
+        sides: { w: { name: 'A', color: '#ffffff', impactEffect: 'light' }, b: { name: 'B', color: '#000000', impactEffect: 'fire' } },
+        pieces,
+      }),
+    );
+    const out = join(src, 'out');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await main(['build-set', src, out])).toBe(0);
+    expect(log).toHaveBeenCalledTimes(12);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^w-king: 1\.000 units tall/));
+    expect(JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8')).generator).toBe('art-pipeline');
+    log.mockRestore();
+  });
+```
+
+(add `import { ALL_PIECE_KEYS } from '../../src/packs/types';` to the test file's imports)
+
 Run: `pnpm test tools/art/cli.test.ts`
-Expected: PASS, 8 tests.
+Expected: PASS, 10 tests.
 
 - [ ] **Step 6: Write the failing dev-pack guard test**
 
@@ -2194,6 +2297,10 @@ It scales to the piece's height, puts the base on y = 0, centers x and z, shrink
 2 MB. Add `--rotate-y 180` if the model faces -Z. It stops with a message that starts with the
 piece key if the model looks Z-up, sits far from the origin, or has a clip name it cannot map.
 
+`--rename "Old=new"` maps a clip to a standard name; `--rename "Old="` deletes it (use this for a
+rig's walk and run cycles). `--anim clip=file.glb` copies the first animation in another glb onto
+the model, which is how Meshy's per-action animation files are combined with the rigged model.
+
 ## Build a whole set
 
 Put raw files and a `set.json` in `art-src/<set-id>/` (this folder is gitignored), then:
@@ -2225,14 +2332,19 @@ All twelve piece keys are required. A piece with no `keep` is rigid and ships wi
 The manifest is written last and stamped `"generator": "art-pipeline"`, after which
 `pnpm dev-packs` will refuse to overwrite that pack.
 
-Inspect a model by hand with `pnpm exec gltf-transform inspect model.glb` and validate it with
-`pnpm exec gltf-transform validate model.glb`.
+## Checking a result
+
+Inspect a model with `pnpm exec gltf-transform inspect model.glb` and validate it with
+`pnpm exec gltf-transform validate model.glb`. Expect one warning on rigged models,
+`NODE_SKINNED_MESH_NON_ROOT`: the normalizer scales a model through a wrapper node above the
+skeleton, and for a skinned mesh the glTF spec applies that scale through the joints, which is
+what three.js does too. It is not a problem.
 ````
 
 - [ ] **Step 11: Run every check**
 
 Run: `pnpm test && pnpm typecheck && pnpm build`
-Expected: all unit tests pass (the 208 from Plan 2 plus the new art and guard tests), typecheck clean, build succeeds.
+Expected: 296 unit tests pass (the 208 from Plan 2 plus 88 new), typecheck clean, build succeeds.
 
 Run: `pnpm e2e` (start `pnpm dev --port 5173` first if `pnpm` is not on the PATH for Playwright's own web server).
 Expected: 9 passed. The public packs are untouched, so nothing should change.
@@ -2246,9 +2358,19 @@ git commit -m "feat(tools): build a whole set pack and guard it from dev-pack ov
 
 ---
 
+## As-Built Corrections
+
+Found by running the real CLI on files and `gltf-transform validate` on the output, after every unit test already passed:
+
+1. **Orphaned keyframe data.** `animation.dispose()` removes the animation but not its channels and samplers, so `prune()` kept their accessors and a deleted walk cycle stayed in the file. The clip tests only compared names. Real Meshy walk and run cycles are large enough to threaten the 2 MB budget. Fixed by `dropClip` in `clips.ts`; guarded by a test that checks the channel and sampler are disposed and by a normalize-level test that counts the output's accessors (7, not 9). Confirmed the disposal test fails when the fix is reverted.
+2. **Noisy logging.** glTF-Transform printed `prune: Removed types...` per model, twelve times in a set build. The shared `io` now logs warnings only.
+3. **Missing input file.** A bad `--in` path printed a raw Node stack trace. `main` now prints `cannot open <path>: no such file or directory` and exits 1.
+4. **Expected validator warning.** Rigged output carries `NODE_SKINNED_MESH_NON_ROOT`, because the wrapper node scales the joints, which is how the glTF spec drives a skinned mesh. Three's loader agrees (the rigged-king test measures the base at y = 0 and height 1.0). Documented in the README.
+5. **Test counts** in Tasks 4, 6, 7, 8 and 9 were corrected to the real numbers.
+
 ## Done Criteria for Plan 3
 
-- `pnpm test`, `pnpm typecheck`, `pnpm build` and `pnpm e2e` all pass. E2E is unchanged at 9 tests because `public/packs/` is untouched.
+- `pnpm test` (296 tests: Plan 2's 208 plus 88 new), `pnpm typecheck`, `pnpm build` and `pnpm e2e` (unchanged at 9 tests, because `public/packs/` is untouched) all pass. `pnpm dev-packs` still regenerates byte-identical files.
 - `pnpm art normalize` turns a fixture model into one that three's `GLTFLoader` reads with its base on y = 0, centered, at the spec height, with exactly the requested clips.
 - `pnpm art build-set` builds twelve models plus a manifest that `parseSetManifest` accepts, and `pnpm dev-packs` refuses to overwrite it.
 - The tools reject, with the piece key in the message: Z-up models, far-off-center models, clips outside the standard five, missing listed clips, mismatched rigs, oversize files.
