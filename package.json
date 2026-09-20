@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "e2e": "playwright test",
     "dev-packs": "tsx tools/dev-pack/generate.ts",
+    "art": "tsx tools/art/cli.ts",
     "postinstall": "node scripts/copy-stockfish.mjs"
   },
   "packageManager": "pnpm@10.18.3",
