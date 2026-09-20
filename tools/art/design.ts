@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { IMPACT_EFFECTS, SOUND_NAMES, type SetManifest } from '../../src/packs/types';
 import type { PoseMode } from './meshy/endpoints';
 import { ALL_PIECE_KEYS, CLIP_NAMES, type ClipName } from './spec';
@@ -196,4 +198,17 @@ export function parseDesign(json: unknown): Design {
     actions,
     audio,
   };
+}
+
+/** Reads and validates `design.json` from a set's source folder. */
+export function loadDesign(dir: string): Design {
+  const path = join(dir, 'design.json');
+  if (!existsSync(path)) throw new DesignError('', `not found in ${dir}; create it with: pnpm art init-set ${dir}`);
+  let json: unknown;
+  try {
+    json = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    throw new DesignError('', `is not valid JSON (${e instanceof Error ? e.message : String(e)})`);
+  }
+  return parseDesign(json);
 }

@@ -1,5 +1,8 @@
 // @vitest-environment node
-import { defaultDesign, DesignError, parseDesign, poseModeFor } from './design';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { defaultDesign, DesignError, loadDesign, parseDesign, poseModeFor } from './design';
 import { ALL_PIECE_KEYS } from './spec';
 
 const roundTrip = () => JSON.parse(JSON.stringify(defaultDesign())) as Record<string, any>;
@@ -104,5 +107,34 @@ describe('poseModeFor', () => {
     const d = defaultDesign();
     expect(poseModeFor(d.pieces['w-king']!)).toBe('a-pose');
     expect(poseModeFor(d.pieces['w-rook']!)).toBeUndefined();
+  });
+});
+
+describe('loadDesign', () => {
+  const folder = () => mkdtempSync(join(tmpdir(), 'design-'));
+
+  test('reads and validates design.json from a set folder', () => {
+    const dir = folder();
+    writeFileSync(join(dir, 'design.json'), JSON.stringify(defaultDesign()));
+    expect(loadDesign(dir)).toEqual(defaultDesign());
+  });
+
+  test('a missing file says how to create it', () => {
+    const dir = folder();
+    expect(() => loadDesign(dir)).toThrow(new RegExp(`design\\.json: not found in .*; create it with: pnpm art init-set`));
+  });
+
+  test('a file that is not JSON is a DesignError, not a stack trace', () => {
+    const dir = folder();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'design.json'), '{ nope');
+    expect(() => loadDesign(dir)).toThrow(DesignError);
+    expect(() => loadDesign(dir)).toThrow(/design\.json: is not valid JSON/);
+  });
+
+  test('a valid JSON file with a bad field reports that field', () => {
+    const dir = folder();
+    writeFileSync(join(dir, 'design.json'), JSON.stringify({ ...defaultDesign(), targetPolycount: 5 }));
+    expect(() => loadDesign(dir)).toThrow(/design\.json targetPolycount/);
   });
 });
