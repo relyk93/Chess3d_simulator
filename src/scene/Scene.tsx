@@ -1,8 +1,9 @@
 import type { RefObject } from 'react';
 import { Board } from './Board';
-import { Pieces } from './Pieces';
 import { CameraRig, type CameraRigHandle } from './CameraRig';
 import { Effects } from './Effects';
+import { Pieces } from './Pieces';
+import { PromotionOverlay } from './PromotionOverlay';
 
 export function Scene({ cameraRef }: { cameraRef: RefObject<CameraRigHandle | null> }) {
   return (
@@ -19,6 +20,7 @@ export function Scene({ cameraRef }: { cameraRef: RefObject<CameraRigHandle | nu
       <spotLight position={[0, 12, 0]} angle={0.5} penumbra={0.6} intensity={30} castShadow />
       <Board />
       <Pieces />
+      <PromotionOverlay />
       <CameraRig ref={cameraRef} />
       <Effects />
     </>

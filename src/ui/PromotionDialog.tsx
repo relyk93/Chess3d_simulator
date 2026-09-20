@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
 import { useActions, useController } from '../controller/context';
 import type { PromotionPiece } from '../core/types';
+import { useEscapeToCancel } from './useEscapeToCancel';
 
 const CHOICES: { piece: PromotionPiece; label: string }[] = [
   { piece: 'q', label: 'Queen' },
@@ -9,17 +9,12 @@ const CHOICES: { piece: PromotionPiece; label: string }[] = [
   { piece: 'n', label: 'Knight' },
 ];
 
+/** HTML promotion picker. Used when the in-scene 3D picker is unavailable (no canvas, or WebGL context lost). */
 export function PromotionDialog() {
   const phase = useController((s) => s.phase);
   const { choosePromotion, cancelPromotion } = useActions();
   const open = phase === 'promoting';
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') cancelPromotion(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, cancelPromotion]);
+  useEscapeToCancel(open, cancelPromotion);
 
   if (!open) return null;
   return (

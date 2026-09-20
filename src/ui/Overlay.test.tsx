@@ -4,12 +4,12 @@ import { createController } from '../controller/store';
 import { ControllerProvider } from '../controller/context';
 import { Overlay } from './Overlay';
 
-function mount(fen?: string) {
+function mount(fen?: string, props: { scenePromotion?: boolean; contextLost?: boolean } = {}) {
   const store = createController({ core: createGameCore(fen), engine: null, saveSettings: () => {} });
   const onResetView = vi.fn();
   render(
     <ControllerProvider store={store}>
-      <Overlay onResetView={onResetView} />
+      <Overlay onResetView={onResetView} {...props} />
     </ControllerProvider>,
   );
   return { store, onResetView, a: store.getState().actions };
@@ -142,4 +142,34 @@ test('FI5: the move list scrolls to the newest row when a move is added', () => 
   top = 0;
   act(() => { a.clickSquare('e7'); a.clickSquare('e5'); a.animationDone(); });
   expect(top).toBe(1234);
+});
+
+const PROMOTION_FEN = '8/P6k/8/8/8/8/8/K7 w - - 0 1';
+
+test('the HTML promotion dialog stays hidden while the in-scene picker is active, and returns when it is not', () => {
+  const { a } = mount(PROMOTION_FEN, { scenePromotion: true });
+  act(() => { a.clickSquare('a7'); a.clickSquare('a8'); });
+  expect(screen.queryByRole('dialog', { name: /choose promotion/i })).not.toBeInTheDocument();
+});
+
+test('with the scene picker unavailable the HTML dialog is the fallback', () => {
+  const { a } = mount(PROMOTION_FEN, { scenePromotion: false });
+  act(() => { a.clickSquare('a7'); a.clickSquare('a8'); });
+  expect(screen.getByRole('dialog', { name: /choose promotion/i })).toBeInTheDocument();
+});
+
+test('a lost WebGL context shows a reload notice; otherwise none', () => {
+  const reload = vi.fn();
+  Object.defineProperty(window, 'location', { value: { ...window.location, reload }, writable: true });
+  const { unmount } = render(
+    <ControllerProvider store={createController({ core: createGameCore(), engine: null, saveSettings: () => {} })}>
+      <Overlay onResetView={() => {}} contextLost />
+    </ControllerProvider>,
+  );
+  expect(screen.getByRole('alert')).toHaveTextContent(/graphics context lost/i);
+  fireEvent.click(screen.getByRole('button', { name: /reload/i }));
+  expect(reload).toHaveBeenCalled();
+  unmount();
+  mount();
+  expect(screen.queryByText(/graphics context lost/i)).not.toBeInTheDocument();
 });
