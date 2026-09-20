@@ -1,0 +1,121 @@
+{
+  "id": "angels-vs-demons",
+  "name": "Angels vs Demons",
+  "version": 1,
+  "sides": {
+    "w": {
+      "name": "Angels",
+      "color": "#f4e9c8",
+      "impactEffect": "light"
+    },
+    "b": {
+      "name": "Demons",
+      "color": "#5a0d0d",
+      "impactEffect": "fire"
+    }
+  },
+  "pieces": {
+    "w-king": {
+      "model": "models/w-king.glb",
+      "clips": [
+        "idle",
+        "attack",
+        "hit",
+        "die",
+        "victory"
+      ]
+    },
+    "w-queen": {
+      "model": "models/w-queen.glb",
+      "clips": [
+        "idle",
+        "attack",
+        "hit",
+        "die",
+        "victory"
+      ]
+    },
+    "w-rook": {
+      "model": "models/w-rook.glb",
+      "clips": []
+    },
+    "w-bishop": {
+      "model": "models/w-bishop.glb",
+      "clips": [
+        "idle",
+        "attack",
+        "hit",
+        "die",
+        "victory"
+      ]
+    },
+    "w-knight": {
+      "model": "models/w-knight.glb",
+      "clips": [
+        "idle",
+        "attack",
+        "hit",
+        "die",
+        "victory"
+      ]
+    },
+    "w-pawn": {
+      "model": "models/w-pawn.glb",
+      "clips": []
+    },
+    "b-king": {
+      "model": "models/b-king.glb",
+      "clips": [
+        "idle",
+        "attack",
+        "hit",
+        "die",
+        "victory"
+      ]
+    },
+    "b-queen": {
+      "model": "models/b-queen.glb",
+      "clips": [
+        "idle",
+        "attack",
+        "hit",
+        "die",
+        "victory"
+      ]
+    },
+    "b-rook": {
+      "model": "models/b-rook.glb",
+      "clips": []
+    },
+    "b-bishop": {
+      "model": "models/b-bishop.glb",
+      "clips": [
+        "idle",
+        "attack",
+        "hit",
+        "die",
+        "victory"
+      ]
+    },
+    "b-knight": {
+      "model": "models/b-knight.glb",
+      "clips": [
+        "idle",
+        "attack",
+        "hit",
+        "die",
+        "victory"
+      ]
+    },
+    "b-pawn": {
+      "model": "models/b-pawn.glb",
+      "clips": []
+    }
+  },
+  "audio": {
+    "attack": "audio/attack.wav",
+    "hit": "audio/hit.wav",
+    "die": "audio/die.wav"
+  },
+  "sequenceOverride": null
+}

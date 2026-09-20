@@ -1,0 +1,17 @@
+{
+  "id": "stone-lava",
+  "name": "Stone and Lava",
+  "version": 1,
+  "model": "board.glb",
+  "environment": "env.hdr",
+  "squares": {
+    "light": "#8c8378",
+    "dark": "#3b3733",
+    "highlight": "#ffd66b",
+    "capture": "#ff5a3c"
+  },
+  "ambient": {
+    "type": "lava-cracks",
+    "intensity": 0.6
+  }
+}
