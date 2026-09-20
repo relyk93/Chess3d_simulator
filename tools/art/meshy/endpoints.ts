@@ -62,5 +62,5 @@ export function resultUrl(kind: TaskKind, task: MeshyTask): string {
   const found = Object.keys(task)
     .map((k) => (k === 'result' && isObj(task.result) ? `result (${Object.keys(task.result).join(', ')})` : k))
     .join(', ');
-  throw new MeshyTaskError(`${kind} task ${task.id} succeeded but has no ${spec.name}; found: ${found}`, task.id);
+  throw new MeshyTaskError(`${kind} task ${task.id} succeeded but has no ${spec.name}; found: ${found}`, task.id, false);
 }

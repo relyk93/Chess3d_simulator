@@ -10,7 +10,12 @@ export class MeshyError extends Error {
 }
 
 export class MeshyTaskError extends Error {
-  constructor(message: string, readonly taskId: string) {
+  /**
+   * `terminal` is true when the task itself failed or was canceled, so retrying means a new task.
+   * It is false when the task may still be fine on Meshy's side (a timeout, or a result the caller
+   * could not read), so the same task id should be picked up again rather than paid for twice.
+   */
+  constructor(message: string, readonly taskId: string, readonly terminal = true) {
     super(message);
     this.name = 'MeshyTaskError';
   }
@@ -142,7 +147,7 @@ export class MeshyClient implements MeshyApi {
         throw new MeshyTaskError(this.redact(`${kind} task ${id} ${task.status.toLowerCase()}: ${reason}`), id);
       }
       if (waited >= this.timeoutMs) {
-        throw new MeshyTaskError(`${kind} task ${id} still ${task.status} after ${this.timeoutMs / 1000}s`, id);
+        throw new MeshyTaskError(`${kind} task ${id} still ${task.status} after ${this.timeoutMs / 1000}s`, id, false);
       }
       await this.sleep(this.pollMs);
       waited += this.pollMs;

@@ -63,4 +63,9 @@ describe('resultUrl', () => {
     );
     expect(() => resultUrl('text-to-image', { ...base, image_urls: [] })).toThrow(/text-to-image task t1 succeeded but has no image_urls/);
   });
+
+  test('that error is not terminal: the task was paid for and can be re-read after the extractor is fixed', () => {
+    const error = (() => { try { resultUrl('rigging', { ...base }); } catch (e) { return e as { terminal?: boolean }; } })();
+    expect(error?.terminal).toBe(false);
+  });
 });

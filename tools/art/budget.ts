@@ -53,6 +53,11 @@ export class Budget {
     this.known = opts.known ?? {};
   }
 
+  /** Whether a credit limit is being enforced. */
+  get capped(): boolean {
+    return this.cap !== null;
+  }
+
   estimate(kind: TaskKind): number | null {
     return this.observed[kind] ?? this.known[kind] ?? null;
   }
@@ -81,6 +86,11 @@ export class Budget {
     this.reserved -= hold;
     this.spent += actual ?? hold;
     if (actual !== null) this.observed[kind] = actual;
+  }
+
+  /** Records what a task cost without charging this run, for one that an earlier run already paid for. */
+  observe(kind: TaskKind, actual: number): void {
+    this.observed[kind] = actual;
   }
 
   /** A task failed or never started: Meshy refunds it, so nothing is spent and nothing is learned. */

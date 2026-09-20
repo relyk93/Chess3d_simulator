@@ -80,6 +80,18 @@ describe('Budget', () => {
     expect(() => b.reserve('rigging')).not.toThrow();
   });
 
+  test('observe learns a cost without spending it, for a task an earlier run paid for', () => {
+    const b = new Budget({ cap: 100, known: {} });
+    b.observe('image-to-3d', 22);
+    expect(b.estimate('image-to-3d')).toBe(22);
+    expect(b.spent).toBe(0);
+  });
+
+  test('capped says whether a limit is being enforced', () => {
+    expect(new Budget({ cap: 5 }).capped).toBe(true);
+    expect(new Budget({ cap: null }).capped).toBe(false);
+  });
+
   test('isKnown says whether a cost can be estimated before spending', () => {
     const b = new Budget({ cap: 5, known: { rigging: 5 } });
     expect(b.isKnown('rigging')).toBe(true);

@@ -173,6 +173,7 @@ describe('wait', () => {
     const error = await api.wait('rigging', 't9').catch((e) => e);
     expect(error).toBeInstanceOf(MeshyTaskError);
     expect(error.taskId).toBe('t9');
+    expect(error.terminal).toBe(true);
     expect(error.message).toMatch(new RegExp(`rigging task t9 ${status.toLowerCase()}: model has no limbs`));
   });
 
@@ -184,7 +185,10 @@ describe('wait', () => {
   test('gives up after the timeout and names the last status', async () => {
     const replies: Reply[] = Array.from({ length: 10 }, () => ({ body: { id: 't', status: 'IN_PROGRESS', progress: 10 } }));
     const { api } = client(replies);
-    await expect(api.wait('animations', 't')).rejects.toThrow(/animations task t still IN_PROGRESS after 5s/);
+    const error = await api.wait('animations', 't').catch((e) => e);
+    expect(error.message).toMatch(/animations task t still IN_PROGRESS after 5s/);
+    // the task is still running on Meshy's side, so the caller must be able to resume it later
+    expect(error.terminal).toBe(false);
   });
 });
 
