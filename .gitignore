@@ -4,3 +4,7 @@ dist/
 .env.*
 !.env.example
 tools/output/
+.superpowers/
+public/stockfish/
+test-results/
+playwright-report/
