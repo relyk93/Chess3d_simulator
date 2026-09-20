@@ -2,6 +2,7 @@ import type { RefObject } from 'react';
 import { Board } from './Board';
 import { Pieces } from './Pieces';
 import { CameraRig, type CameraRigHandle } from './CameraRig';
+import { Effects } from './Effects';
 
 export function Scene({ cameraRef }: { cameraRef: RefObject<CameraRigHandle | null> }) {
   return (
@@ -19,6 +20,7 @@ export function Scene({ cameraRef }: { cameraRef: RefObject<CameraRigHandle | nu
       <Board />
       <Pieces />
       <CameraRig ref={cameraRef} />
+      <Effects />
     </>
   );
 }
