@@ -102,3 +102,44 @@ test('move list stays collapsed while new moves are made', () => {
   fireEvent.click(toggle);
   expect(screen.getByText('e5')).toBeInTheDocument();
 });
+
+test('FI4: the status area renders no empty button-looking pill when idle', () => {
+  mount();
+  const pills = Array.from(document.querySelectorAll('.topbar .btn'));
+  expect(pills.length).toBeGreaterThan(0);
+  expect(pills.filter((el) => (el.textContent ?? '').trim() === '')).toHaveLength(0);
+});
+
+test('FI4: the status area shows Thinking… while the engine searches', async () => {
+  const engine = {
+    ready: () => Promise.resolve(),
+    setSkill: () => {},
+    bestMove: () => new Promise<never>(() => {}),
+    stop: () => {},
+    dispose: () => {},
+  };
+  const store = createController({ core: createGameCore(), engine, saveSettings: () => {} });
+  render(
+    <ControllerProvider store={store}>
+      <Overlay onResetView={() => {}} />
+    </ControllerProvider>,
+  );
+  await act(async () => { await Promise.resolve(); });
+  const a = store.getState().actions;
+  act(() => { a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone(); });
+  expect(store.getState().phase).toBe('engineThinking');
+  expect(screen.getByText('Thinking…')).toBeInTheDocument();
+});
+
+test('FI5: the move list scrolls to the newest row when a move is added', () => {
+  const { a } = mount();
+  const list = screen.getByLabelText('Move list');
+  let top = 0;
+  Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 1234 });
+  Object.defineProperty(list, 'scrollTop', { configurable: true, get: () => top, set: (v: number) => { top = v; } });
+  act(() => { a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone(); });
+  expect(top).toBe(1234);
+  top = 0;
+  act(() => { a.clickSquare('e7'); a.clickSquare('e5'); a.animationDone(); });
+  expect(top).toBe(1234);
+});

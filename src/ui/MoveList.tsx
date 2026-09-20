@@ -1,15 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useController } from '../controller/context';
 
 export function MoveList() {
   const history = useController((s) => s.history);
   const [open, setOpen] = useState(true);
+  const listRef = useRef<HTMLDivElement>(null);
+  // Keep the newest row visible; the container itself is the scroller.
+  useEffect(() => {
+    const el = listRef.current;
+    if (open && el) el.scrollTop = el.scrollHeight;
+  }, [history.length, open]);
   const rows: { n: number; w: string; b?: string }[] = [];
   for (let i = 0; i < history.length; i += 2) {
     rows.push({ n: i / 2 + 1, w: history[i]!.san, b: history[i + 1]?.san });
   }
   return (
-    <div className="movelist" aria-label="Move list">
+    <div className="movelist" aria-label="Move list" ref={listRef}>
       <button className="movelist-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span>Moves</span>
         <span aria-hidden="true">{open ? '\u2212' : '+'}</span>
