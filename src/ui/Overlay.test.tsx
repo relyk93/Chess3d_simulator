@@ -76,3 +76,29 @@ test('settings drawer updates settings', () => {
   fireEvent.change(screen.getByLabelText(/difficulty/i), { target: { value: '15' } });
   expect(store.getState().settings.skill).toBe(15);
 });
+
+test('move list toggle collapses and expands the SAN rows', () => {
+  const { a } = mount();
+  act(() => { a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone(); });
+  const toggle = screen.getByRole('button', { name: /moves/i });
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText('e4')).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText('e4')).not.toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText('e4')).toBeInTheDocument();
+});
+
+test('move list stays collapsed while new moves are made', () => {
+  const { a } = mount();
+  act(() => { a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone(); });
+  const toggle = screen.getByRole('button', { name: /moves/i });
+  fireEvent.click(toggle);
+  act(() => { a.clickSquare('e7'); a.clickSquare('e5'); a.animationDone(); });
+  expect(screen.queryByText('e5')).not.toBeInTheDocument();
+  expect(screen.queryByText('e4')).not.toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(screen.getByText('e5')).toBeInTheDocument();
+});
