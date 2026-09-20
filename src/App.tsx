@@ -1,15 +1,51 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
+import { createAudioEngine } from './audio/audioEngine';
 import { getAppStore } from './appStore';
 import { ControllerProvider } from './controller/context';
-import { PacksProvider } from './packs/context';
-import { createSceneRegistry } from './scene/registry';
+import type { ControllerStore } from './controller/store';
+import { PacksProvider, usePacks } from './packs/context';
+import { packUrl } from './packs/loader';
+import { createSceneRegistry, type SceneRegistry } from './scene/registry';
+import { DEFAULT_CAMERA_POSITION, type CameraRigHandle } from './scene/CameraRig';
 import { SceneRegistryProvider } from './scene/sceneContext';
 import { Scene } from './scene/Scene';
-import { startAnimationBridge } from './scene/animationBridge';
-import type { CameraRigHandle } from './scene/CameraRig';
+import { startSequenceDriver } from './sequencer/driver';
 import { Overlay } from './ui/Overlay';
-import { DEFAULT_CAMERA_POSITION } from './scene/CameraRig';
+
+declare global {
+  interface Window {
+    __chess3dScene?: SceneRegistry;
+  }
+}
+
+/** Non-visual: connects the controller to the scene (sequence driver) and the active set's sounds. */
+function Runtime({ store, registry }: { store: ControllerStore; registry: SceneRegistry }) {
+  const { set } = usePacks();
+  const setRef = useRef(set);
+  setRef.current = set;
+
+  useEffect(
+    () => startSequenceDriver({ store, handles: registry.handles, impactEffect: (side) => setRef.current.manifest.sides[side].impactEffect }),
+    [store, registry],
+  );
+
+  useEffect(() => {
+    const urls = Object.fromEntries(Object.entries(set.manifest.audio).map(([name, path]) => [name, packUrl(set.baseUrl, path)]));
+    const engine = createAudioEngine({ urls, isEnabled: () => store.getState().settings.sound });
+    const off = registry.setAudio(engine);
+    return () => {
+      off();
+      engine.dispose();
+    };
+  }, [set, store, registry]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) window.__chess3dScene = registry;
+  }, [registry]);
+
+  return null;
+}
 
 export function App() {
   const store = getAppStore();
@@ -18,12 +54,11 @@ export function App() {
   const [canvasReady, setCanvasReady] = useState(false);
   const [contextLost, setContextLost] = useState(false);
 
-  useEffect(() => startAnimationBridge(store), [store]);
-
   return (
     <ControllerProvider store={store}>
       <PacksProvider>
         <SceneRegistryProvider value={registry}>
+          <Runtime store={store} registry={registry} />
           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <Canvas
               shadows="percentage"
