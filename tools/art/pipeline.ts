@@ -71,7 +71,7 @@ const label = (u: Unit) => `${u.piece} ${u.stage}`;
 /** Meshy errors that will hit every remaining task the same way, so the run should stop. */
 const RUN_STOPPING = new Set([401, 402, 429]);
 
-function piecesInScope(ctx: StageContext): string[] {
+function piecesInScope(ctx: Omit<StageContext, 'api'>): string[] {
   const only = ctx.only;
   if (!only) return [...ALL_PIECE_KEYS];
   for (const piece of only) {
@@ -82,7 +82,7 @@ function piecesInScope(ctx: StageContext): string[] {
   return ALL_PIECE_KEYS.filter((k) => only.includes(k));
 }
 
-function unitsFor(stage: Stage, ctx: StageContext): Unit[] {
+function unitsFor(stage: Stage, ctx: Omit<StageContext, 'api'>): Unit[] {
   const pieces = piecesInScope(ctx);
   switch (stage) {
     case 'concept':
@@ -105,14 +105,14 @@ function unitsFor(stage: Stage, ctx: StageContext): Unit[] {
   }
 }
 
-function missingPrerequisite(u: Unit, ctx: StageContext): string | null {
+function missingPrerequisite(u: Unit, ctx: Omit<StageContext, 'api'>): string | null {
   if (u.stage === 'model' && !ctx.jobs.selected(u.piece, 'concept')) return 'no succeeded concept yet; run --stage concept first';
   if (u.stage === 'rig' && !ctx.jobs.selected(u.piece, 'model')) return 'no succeeded model yet; run --stage model first';
   if (isClip(u.stage) && !ctx.jobs.selected(u.piece, 'rig')) return 'no succeeded rig yet; run --stage rig first';
   return null;
 }
 
-function decide(u: Unit, ctx: StageContext): Decision {
+function decide(u: Unit, ctx: Omit<StageContext, 'api'>): Decision {
   const attempts = ctx.jobs.attempts(u.piece, u.stage);
   let open = -1;
   attempts.forEach((a, i) => {
@@ -164,8 +164,8 @@ function fileFor(u: Unit, n: number): string {
   }
 }
 
-/** What a run would do, without creating anything or calling Meshy. */
-export function planStage(stage: Stage, ctx: StageContext): PlanItem[] {
+/** What a run would do, without creating anything or calling Meshy, so it takes no API at all. */
+export function planStage(stage: Stage, ctx: Omit<StageContext, 'api'>): PlanItem[] {
   return unitsFor(stage, ctx).map((u) => {
     const d = decide(u, ctx);
     if (d.action === 'create') return { piece: u.piece, stage: u.stage, action: 'create', credits: ctx.budget.estimate(u.kind) };

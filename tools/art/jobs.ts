@@ -120,6 +120,17 @@ export class Jobs {
     this.save();
   }
 
+  /** The most recently recorded cost of a stage across all pieces, or null if none has been recorded. */
+  lastCredits(stage: StageKey): number | null {
+    let last: number | null = null;
+    for (const stages of Object.values(this.data.pieces)) {
+      for (const attempt of stages[stage]?.attempts ?? []) {
+        if (attempt.credits !== null) last = attempt.credits;
+      }
+    }
+    return last;
+  }
+
   totalCredits(): number {
     let total = 0;
     for (const stages of Object.values(this.data.pieces)) {

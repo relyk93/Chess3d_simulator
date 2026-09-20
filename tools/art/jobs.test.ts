@@ -111,6 +111,18 @@ describe('Jobs selection', () => {
   });
 });
 
+describe('Jobs lastCredits', () => {
+  test('is the most recent recorded cost of a stage across all pieces, or null if none', () => {
+    const jobs = Jobs.load(tmp());
+    expect(jobs.lastCredits('model')).toBeNull();
+    jobs.add('w-king', 'model', attempt('a', { credits: 20 }));
+    jobs.add('b-king', 'model', attempt('b', { credits: 22 }));
+    jobs.add('w-queen', 'model', attempt('c', { status: 'FAILED', file: null, credits: null }));
+    expect(jobs.lastCredits('model')).toBe(22);
+    expect(jobs.lastCredits('rig')).toBeNull();
+  });
+});
+
 describe('Jobs credits', () => {
   test('totalCredits adds every recorded cost across pieces and stages and ignores unknowns', () => {
     const jobs = Jobs.load(tmp());
