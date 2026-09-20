@@ -16,7 +16,7 @@ export interface ClipReport {
 const isStandard = (name: string): name is ClipName => (CLIP_NAMES as readonly string[]).includes(name);
 
 /** Disposing an animation alone leaves its channels and samplers, and so their keyframe accessors, in the file. */
-function dropClip(anim: Animation): void {
+export function dropClip(anim: Animation): void {
   for (const channel of anim.listChannels()) {
     const sampler = channel.getSampler();
     channel.dispose();

@@ -9,7 +9,7 @@ import { NormalizeError } from './spec';
 const USAGE = `usage:
   pnpm art normalize --piece w-king --in raw.glb --out out.glb
       [--keep idle,attack,hit,die,victory] [--rename "Old|Name=attack" | "Old="]
-      [--anim attack=attack.glb] [--rotate-y 180] [--max-texture 1024]
+      [--anim attack=attack.glb] [--drop-base-clips] [--rotate-y 180] [--max-texture 1024]
   pnpm art build-set <source-dir> <out-dir>      (reads <source-dir>/set.json)`;
 
 const bytesOf = (path: string) => new Uint8Array(readFileSync(path));

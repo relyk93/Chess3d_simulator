@@ -13,6 +13,8 @@ export interface PieceSource {
   /** Clips the manifest lists for this piece. Default `[]`, a rigid piece. */
   keep?: ClipName[];
   rename?: Record<string, string | null>;
+  /** Remove the base model's own clips (a rig's walk and run) before `clips` are merged. */
+  dropBaseClips?: boolean;
   /** Animation-only glb files to merge, by clip name, relative to the source folder. */
   clips?: Partial<Record<ClipName, string>>;
   maxTexture?: number;
@@ -55,6 +57,7 @@ export async function buildSet(srcDir: string, outDir: string): Promise<Normaliz
       piece: key,
       keep: piece.keep ?? [],
       rename: piece.rename,
+      dropBaseClips: piece.dropBaseClips,
       rotateYDeg: piece.rotateY,
       maxTexturePx: piece.maxTexture,
       extraClips,

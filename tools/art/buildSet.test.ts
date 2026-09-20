@@ -112,6 +112,17 @@ describe('buildSet', () => {
     expect(existsSync(join(out, 'manifest.json'))).toBe(false);
   });
 
+  test('dropBaseClips discards the base model clips without needing a rename map', async () => {
+    const src = await makeSource();
+    put(src, 'raw/w-king-die.glb', await statueGlb({ skinned: true, clips: ['Death'] }));
+    editConfig(src, (c) => {
+      c.pieces['w-king'] = { model: 'raw/w-king.glb', keep: ['die'], dropBaseClips: true, clips: { die: 'raw/w-king-die.glb' } };
+    });
+    const out = outDir();
+    await buildSet(src, out);
+    expect(parseSetManifest(JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8'))).pieces['w-king']?.clips).toEqual(['die']);
+  });
+
   test('per-piece clips files are merged', async () => {
     const src = await makeSource();
     put(src, 'raw/w-king-die.glb', await statueGlb({ skinned: true, clips: ['Death'] }));

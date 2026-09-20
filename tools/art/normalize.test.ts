@@ -72,6 +72,28 @@ describe('normalizeModel', () => {
     vi.restoreAllMocks();
   });
 
+  test("dropBaseClips removes the base model's own clips before extra clips are merged", async () => {
+    const input = await statueGlb({ skinned: true, clips: ['Walking', 'Running'] });
+    const attack = await statueGlb({ skinned: true, clips: ['Fight'] });
+    const { glb, report } = await normalizeModel(input, {
+      piece: 'w-king',
+      keep: ['attack'],
+      dropBaseClips: true,
+      extraClips: [{ name: 'attack', bytes: attack }],
+    });
+    expect(report.clips).toEqual(['attack']);
+    // position, indices, joints, weights, inverse bind matrices, plus the merged clip's time and value
+    expect((await readGlb(glb)).getRoot().listAccessors()).toHaveLength(7);
+  });
+
+  test('without dropBaseClips the same input is rejected for its stray clips', async () => {
+    const input = await statueGlb({ skinned: true, clips: ['Walking', 'Running'] });
+    const attack = await statueGlb({ skinned: true, clips: ['Fight'] });
+    await expect(
+      normalizeModel(input, { piece: 'w-king', keep: ['attack'], extraClips: [{ name: 'attack', bytes: attack }] }),
+    ).rejects.toThrow(/clips outside the standard five remain: "Walking", "Running"/);
+  });
+
   test('a rigid pawn keeps no clips and gets the pawn height', async () => {
     const input = await statueGlb({ size: [0.5, 1, 0.5], center: [0, 0.5, 0], clips: ['idle'] });
     const { glb, report } = await normalizeModel(input, { piece: 'b-pawn', keep: [] });

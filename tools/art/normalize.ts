@@ -1,5 +1,5 @@
 import type { Document } from '@gltf-transform/core';
-import { applyClips } from './clips';
+import { applyClips, dropClip } from './clips';
 import { assertNotFarOff, assertYUp, measure, theScene } from './inspect';
 import { io } from './io';
 import { mergeClips, type ClipSource } from './mergeClips';
@@ -18,6 +18,11 @@ export interface NormalizeOptions {
   rotateYDeg?: number;
   /** Texture size ceiling in pixels, up to 2048. Default 1024. */
   maxTexturePx?: number;
+  /**
+   * Remove every clip already in the base model before `extraClips` are merged. A rigged file from
+   * Meshy carries walking and running clips whose names are not known in advance.
+   */
+  dropBaseClips?: boolean;
   /** Animation-only files (for example Meshy Animation API output); each `name` becomes a clip. */
   extraClips?: readonly { name: string; bytes: Uint8Array }[];
 }
@@ -54,6 +59,9 @@ export async function normalizeModel(input: Uint8Array, opts: NormalizeOptions):
   assertNotFarOff(before, piece);
 
   const warnings: string[] = [];
+  if (opts.dropBaseClips) {
+    for (const anim of doc.getRoot().listAnimations()) dropClip(anim);
+  }
   if (opts.extraClips && opts.extraClips.length > 0) {
     const sources: ClipSource[] = [];
     for (const clip of opts.extraClips) {

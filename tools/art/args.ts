@@ -46,6 +46,7 @@ function parse(argv: string[]) {
         anim: { type: 'string', multiple: true },
         'rotate-y': { type: 'string' },
         'max-texture': { type: 'string' },
+        'drop-base-clips': { type: 'boolean' },
       },
     }).values;
   } catch (e) {
@@ -91,6 +92,7 @@ export function parseNormalizeArgs(argv: string[]): NormalizeCommand {
       rename,
       rotateYDeg: toNumber(v['rotate-y'], '--rotate-y'),
       maxTexturePx: toNumber(v['max-texture'], '--max-texture'),
+      dropBaseClips: v['drop-base-clips'],
     },
   };
 }

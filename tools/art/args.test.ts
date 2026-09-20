@@ -26,6 +26,11 @@ describe('parseNormalizeArgs', () => {
     });
   });
 
+  test('--drop-base-clips is a switch that defaults to off', () => {
+    expect(parseNormalizeArgs([...base, '--drop-base-clips']).options.dropBaseClips).toBe(true);
+    expect(parseNormalizeArgs(base).options.dropBaseClips).toBeUndefined();
+  });
+
   test('defaults to a rigid piece with no renames', () => {
     expect(parseNormalizeArgs(base).options).toEqual({ piece: 'w-king', keep: [], rename: {} });
   });
