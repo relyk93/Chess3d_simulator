@@ -2,13 +2,15 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseNormalizeArgs, UsageError } from './args';
+import { buildSet } from './buildSet';
 import { normalizeModel, type NormalizeReport } from './normalize';
 import { NormalizeError } from './spec';
 
 const USAGE = `usage:
   pnpm art normalize --piece w-king --in raw.glb --out out.glb
       [--keep idle,attack,hit,die,victory] [--rename "Old|Name=attack" | "Old="]
-      [--anim attack=attack.glb] [--rotate-y 180] [--max-texture 1024]`;
+      [--anim attack=attack.glb] [--rotate-y 180] [--max-texture 1024]
+  pnpm art build-set <source-dir> <out-dir>      (reads <source-dir>/set.json)`;
 
 const bytesOf = (path: string) => new Uint8Array(readFileSync(path));
 
@@ -34,6 +36,12 @@ export async function main(argv: string[]): Promise<number> {
   try {
     if (command === 'normalize') {
       console.log(formatReport(await runNormalize(rest)));
+      return 0;
+    }
+    if (command === 'build-set') {
+      const [srcDir, outDir] = rest;
+      if (!srcDir || !outDir) throw new UsageError('build-set expects <source-dir> <out-dir>');
+      for (const report of await buildSet(srcDir, outDir)) console.log(formatReport(report));
       return 0;
     }
     console.error(USAGE);

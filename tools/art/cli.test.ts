@@ -2,6 +2,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ALL_PIECE_KEYS } from '../../src/packs/types';
 import { formatReport, main, runNormalize } from './cli';
 import { readGlb, statueGlb } from './testing/fixtures';
 
@@ -71,6 +72,37 @@ describe('main', () => {
     expect(error).toHaveBeenCalledTimes(1);
     expect(error).toHaveBeenCalledWith('cannot open /no/such/dir/x.glb: no such file or directory');
     error.mockRestore();
+  });
+
+  test('build-set without its two folders is a usage error', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await main(['build-set', 'only-one'])).toBe(1);
+    expect(error).toHaveBeenCalledWith('build-set expects <source-dir> <out-dir>');
+    error.mockRestore();
+  });
+
+  test('build-set builds a set from a source folder and prints one line per piece', async () => {
+    const src = mkdtempSync(join(tmpdir(), 'art-cli-set-'));
+    const pieces: Record<string, unknown> = {};
+    for (const key of ALL_PIECE_KEYS) {
+      writeFileSync(join(src, `${key}.glb`), await statueGlb({ size: [0.5, 1, 0.5], center: [0, 0.5, 0] }));
+      pieces[key] = { model: `${key}.glb` };
+    }
+    writeFileSync(
+      join(src, 'set.json'),
+      JSON.stringify({
+        id: 's', name: 'S', version: 1,
+        sides: { w: { name: 'A', color: '#ffffff', impactEffect: 'light' }, b: { name: 'B', color: '#000000', impactEffect: 'fire' } },
+        pieces,
+      }),
+    );
+    const out = join(src, 'out');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await main(['build-set', src, out])).toBe(0);
+    expect(log).toHaveBeenCalledTimes(12);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^w-king: 1\.000 units tall/));
+    expect(JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8')).generator).toBe('art-pipeline');
+    log.mockRestore();
   });
 
   test('an unknown command exits 1 with the usage text', async () => {

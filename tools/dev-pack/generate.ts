@@ -1,6 +1,7 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ART_GENERATOR } from '../art/generator';
 import { attackSound, dieSound, hitSound } from './audio';
 import { buildBoardGlb } from './board';
 import { buildEnvHdr } from './hdr';
@@ -49,7 +50,19 @@ function write(path: string, data: Uint8Array | string) {
   writeFileSync(path, data);
 }
 
+function refuseToOverwriteArtPack(manifestPath: string) {
+  if (!existsSync(manifestPath)) return;
+  const { generator } = JSON.parse(readFileSync(manifestPath, 'utf8')) as { generator?: unknown };
+  if (generator === ART_GENERATOR) {
+    throw new Error(
+      `refusing to overwrite the art-pipeline pack at ${manifestPath}; delete that pack's folder first if you want the dev pack back`,
+    );
+  }
+}
+
 export function generateDevPacks(publicDir: string): string[] {
+  refuseToOverwriteArtPack(join(publicDir, 'packs/sets/angels-vs-demons/manifest.json'));
+  refuseToOverwriteArtPack(join(publicDir, 'packs/boards/stone-lava/manifest.json'));
   const written: string[] = [];
   const put = (rel: string, data: Uint8Array | string) => {
     write(join(publicDir, rel), data);
