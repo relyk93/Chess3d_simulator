@@ -22,6 +22,20 @@ describe('applyClips', () => {
     expect(names(doc)).toEqual(['idle']);
   });
 
+  test('deleting a clip removes its channels and samplers too, so pruning can free the keyframes', async () => {
+    const doc = await statueDoc({ skinned: true, clips: ['Walking', 'idle'] });
+    const [walking, idle] = doc.getRoot().listAnimations();
+    const walkChannel = walking!.listChannels()[0]!;
+    const walkSampler = walkChannel.getSampler()!;
+    const idleChannel = idle!.listChannels()[0]!;
+
+    applyClips(doc, 'w-king', { rename: { Walking: null }, keep: ['idle'] });
+
+    expect(walkChannel.isDisposed()).toBe(true);
+    expect(walkSampler.isDisposed()).toBe(true);
+    expect(idleChannel.isDisposed()).toBe(false);
+  });
+
   test('a clip outside the standard five is an error that says how to fix it', async () => {
     const doc = await statueDoc({ skinned: true, clips: ['Walking', 'idle'] });
     expect(() => applyClips(doc, 'w-king', { rename: {}, keep: ['idle'] })).toThrow(

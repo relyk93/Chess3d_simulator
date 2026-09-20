@@ -15,6 +15,16 @@ export interface ClipReport {
 
 const isStandard = (name: string): name is ClipName => (CLIP_NAMES as readonly string[]).includes(name);
 
+/** Disposing an animation alone leaves its channels and samplers, and so their keyframe accessors, in the file. */
+function dropClip(anim: Animation): void {
+  for (const channel of anim.listChannels()) {
+    const sampler = channel.getSampler();
+    channel.dispose();
+    sampler?.dispose();
+  }
+  anim.dispose();
+}
+
 export function applyClips(doc: Document, piece: string, opts: ClipOptions): ClipReport {
   const root = doc.getRoot();
   const warnings: string[] = [];
@@ -23,7 +33,7 @@ export function applyClips(doc: Document, piece: string, opts: ClipOptions): Cli
     const from = anim.getName();
     if (!Object.hasOwn(opts.rename, from)) continue;
     const to = opts.rename[from];
-    if (to === null || to === undefined) anim.dispose();
+    if (to === null || to === undefined) dropClip(anim);
     else anim.setName(to);
   }
 
@@ -43,7 +53,7 @@ export function applyClips(doc: Document, piece: string, opts: ClipOptions): Cli
   }
 
   for (const anim of root.listAnimations()) {
-    if (!opts.keep.includes(anim.getName() as ClipName)) anim.dispose();
+    if (!opts.keep.includes(anim.getName() as ClipName)) dropClip(anim);
   }
 
   const have = root.listAnimations().map((a) => a.getName());

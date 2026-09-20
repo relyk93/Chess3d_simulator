@@ -53,6 +53,25 @@ describe('normalizeModel', () => {
     expect(names).toEqual(expect.arrayContaining(['normalized', 'root', 'tip', 'body']));
   });
 
+  test('a dropped clip leaves no orphaned keyframe data in the output', async () => {
+    const input = await statueGlb({ skinned: true, clips: ['Walking', 'idle'] });
+    const { glb } = await normalizeModel(input, { piece: 'w-king', keep: ['idle'], rename: { Walking: null } });
+    // position, indices, joints, weights, inverse bind matrices, plus the one kept clip's time and value
+    expect((await readGlb(glb)).getRoot().listAccessors()).toHaveLength(7);
+  });
+
+  test('does not print the library\'s progress lines, so a whole-set build stays readable', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const input = await statueGlb({ skinned: true, clips: ['Walking', 'idle'] });
+    await normalizeModel(input, { piece: 'w-king', keep: ['idle'], rename: { Walking: null } });
+    expect(info).not.toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
   test('a rigid pawn keeps no clips and gets the pawn height', async () => {
     const input = await statueGlb({ size: [0.5, 1, 0.5], center: [0, 0.5, 0], clips: ['idle'] });
     const { glb, report } = await normalizeModel(input, { piece: 'b-pawn', keep: [] });
