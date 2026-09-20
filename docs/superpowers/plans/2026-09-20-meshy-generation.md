@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
+> **Status: executed.** All nine tasks are built and verified (474 unit tests, 9 e2e). Nothing has been run against Meshy with a real key: every test uses the in-memory fake, and the one real network check used an obviously fake key and got the expected `401`. See "As-Built Corrections" for what changed from the plan.
+>
 > **Style note:** like Plan 2, this plan records interfaces, behavior, and the assertions each task's tests make, and leaves the code to the commits. Every task is test-first: write the tests, watch them fail for the stated reason, implement, watch them pass, commit.
 
 **Goal:** Drive Meshy from the command line to produce the Angels vs Demons set: concept image, 3D model, rig, and five animation clips per rigged piece, then assemble everything into the `set.json` that Plan 3's `build-set` consumes. Every run is resumable, budget-capped, and previewable, and nothing spends credits without an explicit flag.
@@ -50,7 +52,9 @@ From Meshy's API documentation, read on 2026-09-20. Anything not listed here is 
 ```
 tools/art/
   meshy/client.ts        MeshyClient (implements MeshyApi), MeshyError, MeshyTaskError
-  meshy/api.ts           MeshyApi, TaskKind, request builders, result extractors
+  meshy/api.ts           MeshyApi, TaskKind, TaskStatus, MeshyTask, LibraryAction, TASK_PATH
+  meshy/endpoints.ts     request builders and result extractors
+  meshy/env.ts           apiFromEnvironment (.env loading), MissingKeyError
   design.ts              Design type, parseDesign, defaultDesign
   prompts.ts             buildPrompt(design, pieceKey)
   jobs.ts                Jobs (jobs.json state and attempt selection)
@@ -78,14 +82,14 @@ tools/art/
 
 ### Task 2: The Meshy client
 
-**Files:** create `tools/art/meshy/client.ts`, `tools/art/meshy/api.ts` (types only in this task), `tools/art/meshy/client.test.ts`.
+**Files:** create `tools/art/meshy/client.ts`, `tools/art/meshy/api.ts` (types and `TASK_PATH`), `tools/art/meshy/client.test.ts`.
 
 **Interfaces:**
 - `type TaskKind = 'text-to-image' | 'image-to-3d' | 'rigging' | 'animations'`
 - `interface MeshyTask { id: string; status: 'PENDING'|'IN_PROGRESS'|'SUCCEEDED'|'FAILED'|'CANCELED'; progress?: number; consumed_credits?: number; task_error?: { message?: string }; [k: string]: unknown }`
 - `interface MeshyApi { balance(): Promise<number>; create(kind: TaskKind, body: object): Promise<string>; wait(kind: TaskKind, id: string, opts?: { onProgress?: (p: number) => void }): Promise<MeshyTask>; download(url: string, destPath: string): Promise<void>; library(search?: string): Promise<LibraryAction[]> }`
 - `class MeshyClient implements MeshyApi`, constructed with `{ apiKey, fetch?, sleep?, baseUrl?, pollMs?, timeoutMs?, maxRetries? }`.
-- `class MeshyError extends Error { status: number }` and `class MeshyTaskError extends Error { taskId: string }`.
+- `class MeshyError extends Error { status: number }` and `class MeshyTaskError extends Error { taskId: string; terminal: boolean }`. `terminal` is true when the task itself failed or was canceled (Meshy refunds it, so the next run makes a new task) and false for a timeout or an unreadable result (the task may already be charged, so the same task is picked up again).
 
 **Behavior:** every request sends the bearer header. A non-2xx response throws `MeshyError` with the body's `message` and a plain-language hint (`401`: check `MESHY_API_KEY`; `402`: out of credits). `429` is retried with exponential backoff up to `maxRetries` (default 5) using the injected `sleep`, then thrown. `5xx` is retried the same way. `wait` polls until `SUCCEEDED` and returns the task; `FAILED` or `CANCELED` throws `MeshyTaskError` carrying `task_error.message`; exceeding `timeoutMs` throws with the last status. `download` writes the file, creating folders, and throws on a non-2xx status. The key never appears in any message.
 
@@ -95,7 +99,7 @@ tools/art/
 
 ### Task 3: Endpoint builders, extractors, and the fake
 
-**Files:** extend `tools/art/meshy/api.ts`; create `tools/art/testing/fakeMeshy.ts`; tests `tools/art/meshy/api.test.ts`.
+**Files:** create `tools/art/meshy/endpoints.ts`, `tools/art/testing/fakeMeshy.ts`; tests `tools/art/meshy/endpoints.test.ts`, `tools/art/testing/fakeMeshy.test.ts`.
 
 **Interfaces:** `textToImageBody(prompt, opts)`, `imageTo3dBody(inputTaskId, opts)`, `riggingBody(inputTaskId, heightMeters)`, `animationBody(rigTaskId, actionId)` return request bodies exactly as in "Meshy Facts". `resultUrl(kind, task): string` extracts `image_urls[0]`, `model_urls.glb`, `result.rigged_character_glb_url`, or `result.animation_glb_url`, and throws a clear error naming the kind and the keys it did find when the field is missing. `createFakeMeshy(opts?)` returns a `MeshyApi` plus inspection (`created`, `downloads`, `balance`) that succeeds every task after a configurable number of polls, can be told to fail a given kind or piece, records every body, and writes small fixture files on `download`.
 
@@ -125,7 +129,8 @@ tools/art/
 - `type StageKey = 'concept' | 'model' | 'rig' | ClipName`
 - `interface Attempt { taskId: string; status: TaskStatus; file: string | null; credits: number | null; error: string | null }`
 - `class Jobs`: `static load(path)` (an absent file is empty, a corrupt one throws naming the path), `attempts(piece, stage)`, `add(piece, stage, attempt)`, `update(piece, stage, taskId, patch)`, `selected(piece, stage): Attempt | null` (the picked index, else the latest `SUCCEEDED`), `select(piece, stage, index)`, `totalCredits()`. Every mutation saves atomically (write a temp file, rename).
-- `class Budget`: `constructor({ cap: number | null, known: Partial<Record<TaskKind, number>> })`, `estimate(kind): number | null`, `reserve(kind)` throws `BudgetError` when `spent + estimate > cap`, `settle(kind, actual)` records `actual` as the observed cost, `spent`.
+- `class Budget`: `constructor({ cap, known })`, `estimate(kind): number | null` (a reported cost overrides a documented one), `isKnown`, `capped`, `reserve(kind): number` (returns the amount held; throws `BudgetError` when spent plus held plus the estimate would pass the cap), `settle(kind, hold, actual)`, `release(hold)` (no spend, no learning), `observe(kind, actual)` (learn a cost without charging this run), `spent`. `knownCosts(design)` builds the documented table.
+- `Jobs` also has `selectedNumber(piece, stage)` and `lastCredits(stage)`, so a later run starts with the costs earlier runs recorded.
 
 **Tests:** persistence across a reload; the atomic write leaves no partial file; corrupt file error; selection rules; `totalCredits`; budget refuses over the cap, treats an unknown estimate as `null`, learns from `settle`, and has no limit when `cap` is `null`.
 
@@ -161,7 +166,7 @@ tools/art/
 
 ### Task 8: Commands, `init-set`, and `.env`
 
-**Files:** create `tools/art/init.ts`, `tools/art/cliGenerate.ts`; modify `tools/art/cli.ts`, `.env.example`; tests `init.test.ts`, `cliGenerate.test.ts`.
+**Files:** create `tools/art/init.ts`, `tools/art/cliGenerate.ts`, `tools/art/meshy/env.ts`; modify `tools/art/cli.ts`, `tools/art/design.ts` (`loadDesign`), `.env.example`; tests `init.test.ts`, `cliGenerate.test.ts`, `meshy/env.test.ts`. `main(argv, deps)` takes an injected `{ api }` so tests use the fake.
 
 **Commands** (all through `pnpm art`): `init-set <dir>` writes `design.json` from `defaultDesign()` and copies the dev pack's three `.wav` files if present, refusing to overwrite an existing `design.json`; `balance`; `actions [--search word]`; `generate <dir> --stage concept|model|rig|animate [--only a,b] [--again] [--dry-run] [--yes --max-credits N] [--concurrency N]`; `pick <dir> <piece> <stage> <n>`; `assemble <dir>`.
 
@@ -183,18 +188,31 @@ Document the first-run protocol below and the file layout. Run `pnpm test`, `pnp
 
 ## First Live Run Protocol (needs your key and your approval at each step)
 
+The exact commands are in `tools/art/README.md`, under "Generating a set with Meshy". In outline:
+
 1. Create a key in Meshy's dashboard and put `MESHY_API_KEY=...` in `.env` (gitignored). Run `pnpm art balance`.
 2. `pnpm art init-set art-src/angels-vs-demons`, then edit `design.json` (style, prompts, knight and rigging choices).
 3. `pnpm art actions --search idle` (and `hit`, `die`, `victory`) and set the ids in `design.json`. Free.
 4. **One concept:** `pnpm art generate art-src/angels-vs-demons --stage concept --only w-king --dry-run`, then with `--yes --max-credits 10`. Look at `concepts/w-king-1.png`. Re-roll with `--again` until you like it. This also confirms the response shapes against reality.
 5. **One model:** the same for `--stage model --only w-king --yes --max-credits <cap>`. The first model task reveals the real image-to-3D cost. Inspect the glb.
-6. **One full piece:** `rig`, then `animate` for `w-king`, then `pnpm art assemble` is not yet possible (needs all twelve), so normalize that one glb by hand with `pnpm art normalize ... --drop-base-clips --anim ...` and look at it in the app.
+6. **One full piece:** `rig`, then `animate` for `w-king`. `assemble` needs all twelve pieces, so normalize this one with `pnpm art normalize ... --drop-base-clips --anim ...` straight over the dev pack's `w-king.glb` and look at it in the app, then `git checkout public/packs`.
 7. Only then run each stage for the remaining pieces, stage by stage, checking the concept images before spending on models.
 8. `pnpm art assemble art-src/angels-vs-demons`, then `pnpm art build-set art-src/angels-vs-demons public/packs/sets/angels-vs-demons`.
 
+## As-Built Corrections
+
+1. **`x += await y` dropped an increment.** `report.unstarted += await runPool(...)` reads `unstarted` before the await, so it overwrote the increment `process()` made while the pool ran. The budget test (expected 10, got 9) caught it. The pipeline now awaits first and adds after.
+2. **`GENERATION_COMMANDS[command]` found inherited properties.** `pnpm art constructor` would have called `Object(...)`. It now uses `Object.hasOwn`, with a test for `constructor`, `toString`, `__proto__` and `hasOwnProperty`.
+3. **Usage text buried the one line that mattered.** A missing key or a refusal to spend printed 20 lines of usage. Those are now `MissingKeyError` and `RefusedError`, printed alone; only real syntax mistakes print usage.
+4. **A paid task could be lost.** Errors after a task was charged (timeout, download failure, an unreadable result) must leave it open, and a failed task is refunded. That distinction became `MeshyTaskError.terminal`, and non-terminal failures settle the estimate against the budget instead of releasing it.
+5. **The budget forgot earlier runs.** Each run started with a fresh `Budget`, so image-to-3D would have looked unknown every time. The `generate` command now primes it from `Jobs.lastCredits`.
+6. **`planStage` takes no API.** A dry run cannot be handed a live client, which is how "dry-run needs no key" is enforced rather than promised.
+7. **The stage decision includes a "stop rather than spend blind" rule.** If the first task of an unknown-cost kind fails and a cap is set, the run stops and says to set `credits.imageTo3d`.
+8. The real client was checked once against Meshy with an obviously fake key: it reached the API, received the real `401: Invalid API key`, and printed one clean line with the key nowhere in the output.
+
 ## Done Criteria for Plan 3b
 
-- `pnpm test`, `pnpm typecheck`, `pnpm build`, `pnpm e2e` all pass; no test uses the network or a key.
+- `pnpm test` (474 tests), `pnpm typecheck`, `pnpm build` and `pnpm e2e` (9 tests) all pass; no test uses the network or a key.
 - With no key set, `init-set`, `generate --dry-run`, `pick`, `assemble` (on fixtures) all work, and `generate --yes` refuses with one clear line.
 - A run interrupted at any point resumes without creating a duplicate task.
 - The plan's Meshy facts are re-checked against the first real responses (Protocol steps 4 to 6) and any mismatch is fixed in the extractors.
