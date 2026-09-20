@@ -269,3 +269,54 @@ describe('createController review fixes', () => {
     expect(state(store)).toMatchObject({ phase: 'idle', engineStatus: 'failed' });
   });
 });
+
+describe('createController final review fixes', () => {
+  test('FI1: turning two-player off with an engine-colour piece selected starts the engine', async () => {
+    const { store, a, engine, core } = await setup();
+    a.updateSettings({ twoPlayer: true });
+    a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone();
+    a.clickSquare('e7');
+    expect(state(store)).toMatchObject({ phase: 'selected', selected: 'e7' });
+    a.updateSettings({ twoPlayer: false });
+    expect(state(store)).toMatchObject({ phase: 'engineThinking', selected: null, legalTargets: [], pendingPromotion: null });
+    expect(engine.searches).toEqual([core.fen()]);
+  });
+
+  test('FI1: turning two-player off while an engine-colour promotion is pending starts the engine', async () => {
+    const { store, a, engine, core } = await setup('4k3/8/8/8/8/8/p6P/4K3 b - - 0 1', { ...DEFAULT_SETTINGS, twoPlayer: true });
+    a.clickSquare('a2'); a.clickSquare('a1');
+    expect(state(store)).toMatchObject({ phase: 'promoting', pendingPromotion: { from: 'a2', to: 'a1' } });
+    a.updateSettings({ twoPlayer: false });
+    expect(state(store)).toMatchObject({ phase: 'engineThinking', selected: null, pendingPromotion: null });
+    expect(engine.searches).toEqual([core.fen()]);
+  });
+
+  test('FI2: an engine start failure during the animation of a mating move still reaches gameOver', async () => {
+    const core = createGameCore('6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1');
+    const engine = new FakeEngine();
+    const store = createController({ core, engine, saveSettings: () => {} });
+    const a = state(store).actions;
+    a.clickSquare('a1'); a.clickSquare('a8');
+    expect(state(store)).toMatchObject({ phase: 'animatingMove', gameOver: 'checkmate', engineStatus: 'starting' });
+    engine.failToStart();
+    await flush();
+    expect(state(store)).toMatchObject({ phase: 'animatingMove', engineStatus: 'failed' });
+    expect(state(store).settings.twoPlayer).toBe(true);
+    a.animationDone();
+    expect(state(store)).toMatchObject({ phase: 'gameOver', gameOver: 'checkmate' });
+  });
+
+  test('FI3: with no engine and two-player off, undo removes exactly one ply', () => {
+    const core = createGameCore();
+    const store = createController({ core, engine: null, saveSettings: () => {} });
+    const a = state(store).actions;
+    expect(state(store).settings.twoPlayer).toBe(false);
+    a.clickSquare('e2'); a.clickSquare('e4'); a.animationDone();
+    a.clickSquare('e7'); a.clickSquare('e5'); a.animationDone();
+    a.undo();
+    expect(state(store)).toMatchObject({ phase: 'idle', turn: 'b' });
+    expect(state(store).history.map((m) => m.san)).toEqual(['e4']);
+    a.undo();
+    expect(state(store)).toMatchObject({ phase: 'idle', turn: 'w', history: [] });
+  });
+});

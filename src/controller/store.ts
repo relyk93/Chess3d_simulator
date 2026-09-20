@@ -93,7 +93,15 @@ export function createController(deps: ControllerDeps): ControllerStore {
     const message = err instanceof Error ? err.message : String(err);
     const settings = { ...get().settings, twoPlayer: true };
     save(settings);
-    set({ engineStatus: 'failed', engineError: message, settings, phase: 'idle' });
+    // Only a failed search returns to idle; in any other phase (e.g. a move animating) let the
+    // animation finish so afterMove can route to gameOver or idle.
+    const fromSearch = get().phase === 'engineThinking';
+    set({
+      engineStatus: 'failed',
+      engineError: message,
+      settings,
+      ...(fromSearch ? { phase: 'idle' as Phase, ...CLEAR_SELECTION } : {}),
+    });
   }
 
   function requestEngineMove(isRetry = false) {
@@ -187,7 +195,7 @@ export function createController(deps: ControllerDeps): ControllerStore {
         undoOne();
       } else {
         undoOne();
-        if (!get().settings.twoPlayer && core.turn() !== humanColor) undoOne();
+        if (!isHumanTurn()) undoOne();
       }
       set({ phase: 'idle', ...CLEAR_SELECTION, ...snapshot() });
     },
@@ -207,7 +215,11 @@ export function createController(deps: ControllerDeps): ControllerStore {
         set({ phase: 'idle', ...CLEAR_SELECTION });
       }
       if (patch.skill !== undefined && engine && get().engineStatus === 'ready') engine.setSkill(patch.skill);
-      if (patch.twoPlayer === false && get().phase === 'idle' && engineShouldMove()) requestEngineMove();
+      const ph = get().phase;
+      if (patch.twoPlayer === false && (ph === 'idle' || ph === 'selected' || ph === 'promoting') && engineShouldMove()) {
+        set({ ...CLEAR_SELECTION });
+        requestEngineMove();
+      }
     },
   };
 
